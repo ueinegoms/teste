@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+
+<html lang="pt-br">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Visualização Neuronal 3D</title>
+
+    <style>
+	* { background:#000000; margin: 0px; padding: 0px; overflow: hidden}
+
+        body { margin: 0; position: relative; background-color: #181818; }
+
+        canvas { width: 100%; height: 100%; display: block; position: absolute; top: 50%; left: 50px; z-index: 1; }
+
+    </style>
+
+</head>
+
+<body>
+
+<img src="Detalhe da vaga.png" alt="">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+
+    const scene = new THREE.Scene();
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+    camera.position.z = 80;
+
+  
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    document.body.appendChild(renderer.domElement);
+
+  
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+    controls.autoRotate = true;
+
+    controls.autoRotateSpeed = 0;
+
+    controls.enableDamping = true;
+
+  
+
+    const light = new THREE.PointLight(0x2BD3C9, 1, 100);
+
+    light.position.set(50, 50, 50);
+
+    scene.add(light);
+
+  
+
+    const defaultColor = new THREE.Color(0x143634);
+
+    const pulseColor = new THREE.Color(0x2BD3C9);
+
+  
+
+    const fixedColorMaterial = new THREE.MeshBasicMaterial({ color: defaultColor });
+
+  
+
+    // Variáveis globais para controle de estados
+
+    let centralNeuronIntensity = 0; // Usamos intensidade entre 0 e 1 para transição suave
+
+    let centralConnectionsIntensity = 0;
+
+    let peripheralNeuronsIntensity = 0;
+
+    let peripheralConnectionsIntensity = 0;
+
+  
+
+    function createNeuron(position) {
+
+        const neuronGeometry = new THREE.SphereGeometry(2, 12, 12);
+
+        const neuron = new THREE.Mesh(neuronGeometry, fixedColorMaterial.clone());
+
+        neuron.position.copy(position);
+
+        scene.add(neuron);
+
+        return neuron;
+
+    }
+
+  
+
+    const centralNeurons = [ createNeuron(new THREE.Vector3(0, 0, 0)) ];
+
+  
+
+    let dendrites = [];
+
+    let lines = [];
+
+    let connections = [];
+
+  
+
+    function createDendrites(center, numDendrites) {
+
+        for (let i = 0; i < numDendrites; i++) {
+
+            const dendriteGeometry = new THREE.SphereGeometry(0.5, 6, 6);
+
+            const dendrite = new THREE.Mesh(dendriteGeometry, fixedColorMaterial.clone());
+
+  
+
+            const theta = Math.random() * Math.PI * 2;
+
+            const phi = Math.random() * Math.PI;
+
+            const radius = 20 + Math.random() * 10;
+
+  
+
+            dendrite.position.set(
+
+                center.x + Math.sin(phi) * Math.cos(theta) * radius,
+
+                center.y + Math.sin(phi) * Math.sin(theta) * radius,
+
+                center.z + Math.cos(phi) * radius
+
+            );
+
+  
+
+            scene.add(dendrite);
+
+  
+
+            const lineMaterial = new THREE.LineBasicMaterial({ color: defaultColor, transparent: true, opacity: 0.4 });
+
+            const points = [center.clone(), dendrite.position.clone()];
+
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+
+            const line = new THREE.Line(lineGeometry, lineMaterial);
+
+            scene.add(line);
+
+  
+
+            dendrites.push({
+
+                mesh: dendrite,
+
+                theta: theta,
+
+                phi: phi,
+
+                speed: Math.random() * 0.002 + 0.0001
+
+            });
+
+            lines.push(line);
+
+        }
+
+    }
+
+  
+
+    centralNeurons.forEach(neuron => createDendrites(neuron.position, 50));
+
+  
+
+// Função de suavização quadrática (ease-out)
+function easeOutQuad(t) {
+    return t * (2 - t); // Ease-out quadrática
+}
+
+function moveDendrites() {
+
+    const duration = 2000; // Duração de 2 segundos para suavização
+    const currentTime = Date.now();
+
+    for (let i = 0; i < dendrites.length; i++) {
+
+        let dendriteObj = dendrites[i];
+        let dendrite = dendriteObj.mesh;
+
+        if (!dendriteObj.startTime) {
+            // Define o tempo de início do movimento
+            dendriteObj.startTime = currentTime;
+        }
+
+        // Calcula quanto tempo passou desde o início do movimento
+        let elapsedTime = currentTime - dendriteObj.startTime;
+        let progress = Math.min(elapsedTime / duration, 1); // De 0 a 1 (não passa de 1)
+        let easingFactor = easeOutQuad(progress); // Aplicamos a suavização
+
+        // O raio continua a ser calculado normalmente
+        let radius = 20 + Math.sin(currentTime * 0.001 + i) * 5;
+        
+        // Aplica a suavização apenas à rotação (theta e phi)
+        let currentTheta = dendriteObj.theta * easingFactor;
+        let currentPhi = dendriteObj.phi * easingFactor;
+
+        // Mantém o movimento de expansão normal
+        dendrite.position.x = Math.sin(currentPhi) * Math.cos(currentTheta) * radius;
+        dendrite.position.y = Math.sin(currentPhi) * Math.sin(currentTheta) * radius;
+        dendrite.position.z = Math.cos(currentPhi) * radius;
+
+        // Atualiza a posição da linha com base na nova posição do dendrite
+        lines[i].geometry.attributes.position.array[3] = dendrite.position.x;
+        lines[i].geometry.attributes.position.array[4] = dendrite.position.y;
+        lines[i].geometry.attributes.position.array[5] = dendrite.position.z;
+        lines[i].geometry.attributes.position.needsUpdate = true;
+
+        // Se o movimento chegou ao fim (após 2 segundos), para a rotação
+        if (progress === 1) {
+            dendriteObj.speed = 0; // Para a rotação
+        }
+    }
+}
+
+
+  
+
+    function updateConnections() {
+
+        connections.forEach(conn => scene.remove(conn));
+
+        connections = [];
+
+  
+
+        for (let i = 0; i < dendrites.length; i++) {
+
+            for (let j = i + 1; j < dendrites.length; j++) {
+
+                const d1 = dendrites[i].mesh.position;
+
+                const d2 = dendrites[j].mesh.position;
+
+                const distance = d1.distanceTo(d2);
+
+  
+
+                if (distance < 10) {
+
+                    const lineMaterial = new THREE.LineBasicMaterial({
+
+                        color: defaultColor.clone().lerp(pulseColor, peripheralConnectionsIntensity),
+
+                        transparent: true,
+
+                        opacity: 0.4 + 0.6 * peripheralConnectionsIntensity // Transição suave na opacidade
+
+                    });
+
+                    const points = [d1.clone(), d2.clone()];
+
+                    const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+
+                    const line = new THREE.Line(lineGeometry, lineMaterial);
+
+                    scene.add(line);
+
+                    connections.push(line);
+
+                }
+
+            }
+
+        }
+
+    }
+
+  
+
+    function applyNeuronColors() {
+
+        // Neurônio central
+
+        centralNeurons.forEach(neuron => {
+
+            neuron.material.color.set(defaultColor.clone().lerp(pulseColor, centralNeuronIntensity));
+
+        });
+
+  
+
+        // Dendritos e conexões centrais
+
+        dendrites.forEach((dendrite, index) => {
+
+            dendrite.mesh.material.color.set(defaultColor.clone().lerp(pulseColor, peripheralNeuronsIntensity));
+
+            lines[index].material.color.set(defaultColor.clone().lerp(pulseColor, centralConnectionsIntensity));
+
+        });
+
+    }
+
+  
+
+    // Função de controle do estado de cada parte com interpolação suave
+
+    // function updateState(step, delta) {
+
+    //     const transitionSpeed = 0.05; // Aumentando a velocidade de transição
+
+  
+
+    //     switch (step) {
+
+    //         case 1:
+
+    //             centralNeuronIntensity = Math.max(centralNeuronIntensity - transitionSpeed, 0);
+
+    //             centralConnectionsIntensity = Math.max(centralConnectionsIntensity - transitionSpeed, 0);
+
+    //             peripheralNeuronsIntensity = Math.max(peripheralNeuronsIntensity - transitionSpeed, 0);
+
+    //             peripheralConnectionsIntensity = Math.max(peripheralConnectionsIntensity - transitionSpeed, 0);
+
+    //             break;
+
+    //         case 2:
+
+    //             centralNeuronIntensity = Math.min(centralNeuronIntensity + transitionSpeed, 1);
+
+    //             break;
+
+    //         case 3:
+
+    //             centralConnectionsIntensity = Math.min(centralConnectionsIntensity + transitionSpeed, 1);
+
+    //             peripheralNeuronsIntensity = Math.min(peripheralNeuronsIntensity + transitionSpeed, 1);
+
+    //             break;
+
+    //         case 4:
+
+    //             centralNeuronIntensity = Math.max(centralNeuronIntensity - transitionSpeed, 0);
+
+    //             break;
+
+    //         case 5:
+
+    //             centralConnectionsIntensity = Math.max(centralConnectionsIntensity - transitionSpeed, 0);
+
+    //             peripheralConnectionsIntensity = Math.min(peripheralConnectionsIntensity + transitionSpeed, 1);
+
+    //             break;
+
+    //         case 6:
+
+    //             peripheralNeuronsIntensity = Math.max(peripheralNeuronsIntensity - transitionSpeed, 0);
+
+    //             break;
+
+    //         case 7:
+
+    //             peripheralConnectionsIntensity = Math.max(peripheralConnectionsIntensity - transitionSpeed, 0);
+
+    //             break;
+
+    //     }
+
+  
+
+    //     applyNeuronColors();
+
+    //     updateConnections(); // Atualiza conexões temporárias
+
+    // }
+
+    function updateState(step, delta) {
+
+        const transitionSpeed = 0.05; // Aumentando a velocidade de transição
+
+  
+
+        switch (step) {
+
+            case 1:
+
+                centralNeuronIntensity = Math.min(centralNeuronIntensity + transitionSpeed, 1);
+
+                centralConnectionsIntensity = Math.max(centralConnectionsIntensity - transitionSpeed, 0);
+
+                peripheralNeuronsIntensity = Math.max(peripheralNeuronsIntensity - transitionSpeed, 0);
+
+                peripheralConnectionsIntensity = Math.max(peripheralConnectionsIntensity - transitionSpeed, 0);
+
+                break;
+
+            case 2:
+
+                centralConnectionsIntensity = Math.min(centralConnectionsIntensity + transitionSpeed, 1);
+
+                peripheralNeuronsIntensity = Math.max(peripheralNeuronsIntensity - transitionSpeed, 0);
+
+                peripheralConnectionsIntensity = Math.max(peripheralConnectionsIntensity - transitionSpeed, 0);
+
+                break;
+
+            case 3:
+
+                centralNeuronIntensity = Math.max(centralNeuronIntensity - transitionSpeed, 0);
+
+                peripheralNeuronsIntensity = Math.min(peripheralNeuronsIntensity + transitionSpeed, 1);
+
+                peripheralConnectionsIntensity = Math.max(peripheralConnectionsIntensity - transitionSpeed, 0);
+
+                break;
+
+            case 4:
+
+                peripheralConnectionsIntensity = Math.min(peripheralConnectionsIntensity + transitionSpeed, 1);
+
+                break;
+
+        }
+
+  
+
+        applyNeuronColors();
+
+        updateConnections(); // Atualiza conexões temporárias
+
+    }
+
+  
+
+    // Controla o ciclo da animação
+
+    function animateSequence() {
+
+        let step = 1;
+
+        let delta = 0;
+
+  
+
+        const interval = setInterval(() => {
+
+            updateState(step, delta);
+
+  
+
+            delta += 1;
+
+            if (delta > 20) { // Acelerando a mudança de estados
+
+                step++;
+
+                delta = 0;
+
+                if (step > 4) {
+
+                    step = 1;
+
+                }
+
+            }
+
+        }, 30); // Aumentando a taxa de atualização para maior fluidez e velocidade
+
+    }
+
+  
+
+    animateSequence();
+
+  
+
+    function animate() {
+
+        requestAnimationFrame(animate);
+
+        moveDendrites();
+
+        controls.update();
+
+        renderer.render(scene, camera);
+
+    }
+
+    animate();
+
+</script>
+
+</body>
+
+</html>
